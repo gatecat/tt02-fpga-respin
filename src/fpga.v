@@ -16,12 +16,13 @@ module gatecat_fpga_top(
     sky130_fd_sc_hd__clkbuf_2 mode_clkbuf(.A(io_in[3]), .X(cfg_mode));
     sky130_fd_sc_hd__clkbuf_2 frameinc_clkbuf(.A(io_in[1]), .X(cfg_frameinc));
     sky130_fd_sc_hd__clkbuf_2 framestrb_clkbuf(.A(io_in[2]), .X(cfg_framestrb));
-    sky130_fd_sc_hd__clkbuf_4 data_clkbuf(.A(io_in[0]), .X(cfg_dataclk));
+    assign cfg_dataclk = io_in[0];
 
-    sky130_fd_sc_hd__buf_2 sel_buf[3:0] (.A(io_in[7:4]), .X(cfg_sel));
+    wire cfg_datain;
+    sky130_fd_sc_hd__buf_2 din_buf (.A(io_in[4]), .X(cfg_datain));
 
-    localparam W = 4;
-    localparam H = 5;
+    localparam W = 5;
+    localparam H = 6;
     localparam FW = W * 4;
     localparam FH = H * 2;
 
@@ -35,11 +36,8 @@ module gatecat_fpga_top(
             frame_ctr <= frame_ctr + 1'b1;
 
     // avoid a shift register for the frame data because that's the highest hold risk
-    always @(posedge cfg_dataclk, posedge cfg_frameinc)
-        if (cfg_frameinc)
-            frame_sr <= 0;
-        else
-            frame_sr[cfg_sel] = 1'b1;
+    always @(posedge cfg_dataclk)
+        frame_sr <= {cfg_datain, frame_sr[FW-1:1]};
 
     wire [FH-1:0] frame_strb;
     wire gated_strobe = cfg_mode & cfg_framestrb;
@@ -51,10 +49,9 @@ module gatecat_fpga_top(
         end
     endgenerate
 
-    wire fab_clk;
-    wire [3:0] fab_din;
-    sky130_fd_sc_hd__clkbuf_4 fab_clkbuf(.A(io_in[0]), .X(fab_clk));
-    sky130_fd_sc_hd__buf_1 din_buf[3:0] (.A(io_in[7:4]), .X(fab_din));
+    wire fab_clk = io_in[0];
+    wire [6:0] fab_din;
+    sky130_fd_sc_hd__buf_1 din_buf[6:0] (.A(io_in[7:1]), .X(fab_din));
 
     wire [0:W-1] cell_q[0:H-1];
     generate
@@ -65,7 +62,7 @@ module gatecat_fpga_top(
                 wire ti, bi, li, ri;
                 if (yy > 0) assign ti = cell_q[yy-1][xx]; else assign ti = fab_din[xx];
                 if (yy < H-1) assign bi = cell_q[yy+1][xx]; else assign bi = cell_q[yy][xx];
-                if (xx > 0) assign li = cell_q[yy][xx-1]; else assign li = fab_din[yy >= 4 ? 3 : yy];
+                if (xx > 0) assign li = cell_q[yy][xx-1]; else assign li = fab_din[yy + 1];
                 if (xx < W-1) assign ri = cell_q[yy][xx+1]; else assign ri = cell_q[yy][xx];
                 gatecat_logic_cell #(.has_ff(1'b1)) lc_i (
                     .CLK(fab_clk),
@@ -79,7 +76,7 @@ module gatecat_fpga_top(
         end
     endgenerate
 
-    assign io_out = {cell_q[4][W-1], cell_q[3][W-1], cell_q[2][W-1], cell_q[1][W-1], cell_q[H-1]};
+    assign io_out = {cell_q[5][W-1], cell_q[4][W-1], cell_q[3][W-1], cell_q[H-1]};
 
 
 endmodule
